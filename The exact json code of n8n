@@ -1,0 +1,231 @@
+{
+  "name": "01 Inbound Router - Twilio WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "twilio-whatsapp-inbound",
+        "httpMethod": "POST",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "id": "9f2d1f5a-3e0a-4c5b-a46d-2b8a0b7b2e01",
+      "name": "Twilio WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Normalize Twilio WhatsApp payload (robust for n8n Webhook output)\n\nconst payload = $json.body ?? $json;\n\nconst from = payload.From || payload.from || '';\nconst user_phone = from.replace(/^whatsapp:/, '');\n\nconst user_name = payload.ProfileName || payload.profileName || 'Unknown';\nconst text = payload.Body || payload.body || '';\n\nconst numMedia = parseInt(payload.NumMedia ?? payload.numMedia ?? '0', 10) || 0;\nconst media_urls = [];\n\nfor (let i = 0; i < numMedia; i++) {\n  const url = payload[`MediaUrl${i}`];\n  if (url) media_urls.push(url);\n}\n\nif (media_urls.length === 0 && payload.MediaUrl0) {\n  media_urls.push(payload.MediaUrl0);\n}\n\nreturn {\n  user_phone,\n  user_name,\n  text,\n  media_urls,\n};\n"
+      },
+      "id": "c3a7a9bf-3bf5-4d3b-9f9c-7f7b1bde4f20",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": "GOOGLE_SHEETS_DOCUMENT_ID_PLACEHOLDER",
+        "sheetName": "Users",
+        "lookupColumn": "phone",
+        "lookupValue": "={{$node[\"Normalize Payload\"].json.user_phone}}",
+        "options": {}
+      },
+      "id": "2c5c5b07-7b4a-4f4d-b6c8-9ef4f2cbb89f",
+      "name": "Lookup User State",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        780,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PLACEHOLDER_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2 (Placeholder)"
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.state || 'NEW_USER'}}",
+              "operation": "equal",
+              "value2": "WAITING_DOCUMENTS"
+            }
+          ]
+        },
+        "combineConditions": "all",
+        "options": {}
+      },
+      "id": "a1bffb7f-1a72-4c95-9f7e-4c3a30c3e8bb",
+      "name": "Route by State",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyContentType": "form-urlencoded",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "To",
+              "value": "=whatsapp:{{$node[\"Normalize Payload\"].json.user_phone}}"
+            },
+            {
+              "name": "From",
+              "value": "whatsapp:+14155238886"
+            },
+            {
+              "name": "Body",
+              "value": "=Hi {{$node[\"Normalize Payload\"].json.user_name}}! Welcome — please send your documents to continue."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3b1a1c53-2a4e-4aa1-b0aa-8d356d8d7c3d",
+      "name": "Send WhatsApp Reply - New User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1300,
+        160
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "PLACEHOLDER_TWILIO_BASIC_AUTH_CREDENTIAL_ID",
+          "name": "Twilio HTTP Basic Auth (Placeholder)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Messages.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyContentType": "form-urlencoded",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "To",
+              "value": "=whatsapp:{{$node[\"Normalize Payload\"].json.user_phone}}"
+            },
+            {
+              "name": "From",
+              "value": "whatsapp:+14155238886"
+            },
+            {
+              "name": "Body",
+              "value": "=Thanks {{$node[\"Normalize Payload\"].json.user_name}} — we're still waiting for your documents. Please upload them to proceed."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9e75e4b2-4b25-42f9-8b1b-c5f2d2f2a92a",
+      "name": "Send WhatsApp Reply - Waiting Documents",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1300,
+        360
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "PLACEHOLDER_TWILIO_BASIC_AUTH_CREDENTIAL_ID",
+          "name": "Twilio HTTP Basic Auth (Placeholder)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Twilio WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Lookup User State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup User State": {
+      "main": [
+        [
+          {
+            "node": "Route by State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by State": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply - Waiting Documents",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send WhatsApp Reply - New User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionTimeout": 3600,
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-0000-0000-000000000000",
+  "meta": {
+    "templateCredsSetup": "Create Google Sheets + Twilio (HTTP Basic) credentials and replace placeholders."
+  },
+  "tags": []
+}
